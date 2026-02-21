@@ -1,0 +1,6 @@
+flask==3.1.*
+flask-cors==5.0.*
+requests==2.32.*
+pydantic==2.10.*
+python-dotenv==1.1.*
+geopy==2.4.*

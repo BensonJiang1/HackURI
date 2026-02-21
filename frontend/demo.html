@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WalkScore — Route Demo</title>
+
+  <!-- Leaflet CSS + JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #222; }
+
+    header { background: #1a73e8; color: #fff; padding: 16px 24px; }
+    header h1 { font-size: 22px; font-weight: 600; }
+    header p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+    .container { display: flex; height: calc(100vh - 72px); }
+
+    /* --- Sidebar --- */
+    .sidebar { width: 380px; min-width: 340px; background: #fff; border-right: 1px solid #ddd; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .field-group label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #555; }
+    .field-group input {
+      padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    .field-group input:focus { outline: none; border-color: #1a73e8; }
+
+    .hint { font-size: 12px; color: #888; }
+
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 16px; border: none; border-radius: 6px; font-size: 14px;
+      cursor: pointer; font-weight: 500; transition: background 0.15s;
+    }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-secondary { background: #e8eaed; color: #333; }
+    .btn-secondary:hover { background: #dadce0; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .divider { border-top: 1px solid #eee; }
+
+    /* Results panel */
+    #results { display: flex; flex-direction: column; gap: 12px; }
+    .result-card {
+      background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 14px; font-size: 13px; line-height: 1.6;
+    }
+    .result-card h3 { font-size: 14px; margin-bottom: 6px; color: #1a73e8; }
+    .result-card .metric { font-size: 22px; font-weight: 700; color: #222; }
+    .result-card .sub { color: #666; }
+
+    .amenity-list { list-style: none; padding: 0; margin: 6px 0 0 0; }
+    .amenity-list li {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 5px 0; border-bottom: 1px solid #e8e8e8;
+    }
+    .amenity-list li:last-child { border-bottom: none; }
+    .amenity-name { font-weight: 500; color: #222; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .amenity-dist { color: #666; font-size: 12px; white-space: nowrap; margin-left: 8px; }
+
+    .transit-leg { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .leg-icon { font-size: 22px; }
+
+    /* Map emoji markers */
+    .marker-icon { font-size: 28px; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.3); }
+
+    .error { color: #d93025; font-size: 13px; }
+    .loading { color: #1a73e8; font-size: 13px; }
+
+    /* --- Map --- */
+    #map { flex: 1; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .container { flex-direction: column; height: auto; }
+      .sidebar { width: 100%; min-width: unset; max-height: 45vh; }
+      #map { height: 55vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WalkScore — Route Demo</h1>
+    <p>Enter addresses or click the map to set start / end points</p>
+  </header>
+
+  <div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="field-group">
+        <label>📍 Start (Home)</label>
+        <input type="text" id="startAddr" placeholder="e.g. 80 Brown St, Providence, RI" />
+        <span class="hint">Or click the map to place a start marker</span>
+      </div>
+
+      <div class="field-group">
+        <label>🏢 End (Work)</label>
+        <input type="text" id="endAddr" placeholder="e.g. 1 Financial Plaza, Providence, RI" />
+        <span class="hint">Or Shift+Click the map to place an end marker</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnWalk" onclick="getWalkRoute()">🚶 Walk Route</button>
+        <button class="btn btn-primary" id="btnTransit" onclick="getTransitRoute()">🚆 Transit Commute</button>
+        <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+      </div>
+
+      <div id="status"></div>
+
+      <div class="divider"></div>
+
+      <!-- Amenities Section -->
+      <div class="section-title">🏪 Nearby Amenities</div>
+      <span class="hint">Search from the start marker location. Place a start marker first.</span>
+
+      <div class="amenity-row">
+        <select id="amenitySelect">
+          <option value="" disabled selected>Choose type…</option>
+        </select>
+        <button class="btn btn-primary" onclick="searchAmenity()" style="padding:8px 12px; font-size:13px;">Search</button>
+      </div>
+
+      <div id="amenityChips" class="chip-list"></div>
+      <div id="amenityResults"></div>
+
+      <div class="divider"></div>
+
+      <div id="results"></div>
+    </div>
+
+    <!-- Map -->
+    <div id="map"></div>
+  </div>
+
+  <script>
+    const API = "http://localhost:5000/api";
+
+    // ── Map setup ──────────────────────────────────────
+    const map = L.map("map").setView([41.826, -71.403], 14); // Providence
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    let startMarker = null;
+    let endMarker = null;
+    let routeLayers = [];
+
+    const startIcon = L.divIcon({ html: "🟢", className: "marker-icon", iconSize: [24, 24], iconAnchor: [12, 12] });
+    const endIcon   = L.divIcon({ html: "🔴", className: "marker-icon", iconSize: [24, 24], iconAnchor: [12, 12] });
+    const stopIcon  = L.divIcon({ html: "🟡", className: "marker-icon", iconSize: [24, 24], iconAnchor: [12, 12] });
+
+    // ── Click map to set markers ───────────────────────
+    map.on("click", async (e) => {
+      if (e.originalEvent.shiftKey) {
+        // Shift+Click = place END marker
+        if (endMarker) map.removeLayer(endMarker);
+        endMarker = L.marker(e.latlng, { icon: endIcon, draggable: true }).addTo(map)
+          .bindPopup("End").openPopup();
+        endMarker.on("dragend", () => reverseGeocode(endMarker, "endAddr"));
+        reverseGeocode(endMarker, "endAddr");
+      } else {
+        // Normal click = place START marker
+        if (startMarker) map.removeLayer(startMarker);
+        startMarker = L.marker(e.latlng, { icon: startIcon, draggable: true }).addTo(map)
+          .bindPopup("Start").openPopup();
+        startMarker.on("dragend", () => reverseGeocode(startMarker, "startAddr"));
+        reverseGeocode(startMarker, "startAddr");
+      }
+    });
+
+    map.on("contextmenu", async (e) => {
+      // Right-click also places END marker
+      e.originalEvent.preventDefault();
+      if (endMarker) map.removeLayer(endMarker);
+      endMarker = L.marker(e.latlng, { icon: endIcon, draggable: true }).addTo(map)
+        .bindPopup("End").openPopup();
+      endMarker.on("dragend", () => reverseGeocode(endMarker, "endAddr"));
+      reverseGeocode(endMarker, "endAddr");
+    });
+
+    async function reverseGeocode(marker, inputId) {
+      const { lat, lng } = marker.getLatLng();
+      try {
+        const r = await fetch(`${API}/geocode/reverse`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lat, lng }),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          document.getElementById(inputId).value = d.display_name || d.address || "";
+        }
+      } catch (_) { /* silent */ }
+    }
+
+    // ── Geocode an address ─────────────────────────────
+    async function geocode(address) {
+      const r = await fetch(`${API}/geocode/forward`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      if (!r.ok) throw new Error(`Geocode failed: ${(await r.json()).error}`);
+      return await r.json();
+    }
+
+    // ── Ensure markers exist (geocode if needed) ───────
+    async function ensureMarkers() {
+      const startAddr = document.getElementById("startAddr").value.trim();
+      const endAddr = document.getElementById("endAddr").value.trim();
+
+      if (!startAddr && !startMarker) throw new Error("Enter a start address or click the map");
+      if (!endAddr && !endMarker) throw new Error("Enter an end address or right-click the map");
+
+      // Geocode start if typed but no marker
+      if (startAddr && (!startMarker || startAddr !== startMarker._lastAddr)) {
+        const g = await geocode(startAddr);
+        if (startMarker) map.removeLayer(startMarker);
+        startMarker = L.marker([g.lat, g.lng], { icon: startIcon, draggable: true }).addTo(map)
+          .bindPopup(`Start: ${g.display_name}`);
+        startMarker._lastAddr = startAddr;
+        startMarker.on("dragend", () => reverseGeocode(startMarker, "startAddr"));
+      }
+
+      // Geocode end if typed but no marker
+      if (endAddr && (!endMarker || endAddr !== endMarker._lastAddr)) {
+        const g = await geocode(endAddr);
+        if (endMarker) map.removeLayer(endMarker);
+        endMarker = L.marker([g.lat, g.lng], { icon: endIcon, draggable: true }).addTo(map)
+          .bindPopup(`End: ${g.display_name}`);
+        endMarker._lastAddr = endAddr;
+        endMarker.on("dragend", () => reverseGeocode(endMarker, "endAddr"));
+      }
+
+      const s = startMarker.getLatLng();
+      const e = endMarker.getLatLng();
+
+      // Fit map to both markers
+      map.fitBounds([[s.lat, s.lng], [e.lat, e.lng]], { padding: [60, 60] });
+
+      return { origin: { lat: s.lat, lng: s.lng }, destination: { lat: e.lat, lng: e.lng } };
+    }
+
+    // ── Clear routes from map ──────────────────────────
+    function clearRoutes() {
+      routeLayers.forEach((l) => map.removeLayer(l));
+      routeLayers = [];
+    }
+
+    function clearAll() {
+      clearRoutes();
+      if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+      if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+      document.getElementById("startAddr").value = "";
+      document.getElementById("endAddr").value = "";
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("status").innerHTML = "";
+    }
+
+    function setStatus(html) { document.getElementById("status").innerHTML = html; }
+
+    // ── Walk route ─────────────────────────────────────
+    async function getWalkRoute() {
+      try {
+        setStatus('<span class="loading">⏳ Geocoding &amp; computing walk route…</span>');
+        const pts = await ensureMarkers();
+
+        const r = await fetch(`${API}/route/walk`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pts),
+        });
+        if (!r.ok) throw new Error((await r.json()).error);
+        const data = await r.json();
+
+        clearRoutes();
+
+        // Draw route polyline
+        if (data.geometry) {
+          const line = L.polyline(data.geometry, { color: "#1a73e8", weight: 5, opacity: 0.8 }).addTo(map);
+          routeLayers.push(line);
+          map.fitBounds(line.getBounds(), { padding: [60, 60] });
+        }
+
+        const calories = (data.duration_min * 4.0).toFixed(0);
+        document.getElementById("results").innerHTML = `
+          <div class="result-card">
+            <h3>🚶 Walking Route</h3>
+            <div class="metric">${data.duration_min} min</div>
+            <div class="sub">${data.distance_km} km · ~${calories} calories (one way)</div>
+          </div>
+          <div class="result-card">
+            <h3>📊 Daily Round Trip</h3>
+            <div class="metric">${(data.duration_min * 2).toFixed(1)} min</div>
+            <div class="sub">${(data.distance_km * 2).toFixed(2)} km · ~${(calories * 2)} cal</div>
+          </div>
+        `;
+        setStatus("");
+      } catch (e) {
+        setStatus(`<span class="error">❌ ${e.message}</span>`);
+      }
+    }
+
+    // ── Transit commute ────────────────────────────────
+    async function getTransitRoute() {
+      try {
+        setStatus('<span class="loading">⏳ Finding transit stops &amp; computing walk legs… (may take 10-15s)</span>');
+        const pts = await ensureMarkers();
+
+        const r = await fetch(`${API}/route/commute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pts),
+        });
+        if (!r.ok) throw new Error((await r.json()).error);
+        const data = await r.json();
+
+        clearRoutes();
+
+        if (data.mode === "direct_walk") {
+          // Direct walk is shorter — show that
+          const calories = (data.total_walk_min * 4.0).toFixed(0);
+          document.getElementById("results").innerHTML = `
+            <div class="result-card">
+              <h3>🚶 Direct Walk (faster than transit)</h3>
+              <div class="metric">${data.total_walk_min} min</div>
+              <div class="sub">${data.total_walk_km} km · ~${calories} cal one way</div>
+              <div class="sub" style="margin-top:6px">Walking directly is faster than walking to a transit stop for this distance.</div>
+            </div>
+          `;
+
+          // Draw direct route
+          const dr = await fetch(`${API}/route/walk`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(pts),
+          });
+          if (dr.ok) {
+            const dd = await dr.json();
+            if (dd.geometry) {
+              const line = L.polyline(dd.geometry, { color: "#1a73e8", weight: 5 }).addTo(map);
+              routeLayers.push(line);
+              map.fitBounds(line.getBounds(), { padding: [60, 60] });
+            }
+          }
+        } else {
+          // Transit mode — draw both walk legs
+          const h2t = data.home_to_transit;
+          const t2w = data.transit_to_work;
+          const allBounds = [];
+
+          // Leg 1: home → transit stop (blue)
+          if (h2t && h2t.geometry) {
+            const line1 = L.polyline(h2t.geometry, { color: "#1a73e8", weight: 5, opacity: 0.8 }).addTo(map);
+            routeLayers.push(line1);
+            allBounds.push(line1.getBounds());
+            // Transit stop marker
+            const stopCoords = h2t.geometry[h2t.geometry.length - 1];
+            const m1 = L.marker(stopCoords, { icon: stopIcon }).addTo(map)
+              .bindPopup(`🚏 ${h2t.stop_name} (${h2t.stop_type})`);
+            routeLayers.push(m1);
+          }
+
+          // Leg 2: transit stop → work (green)
+          if (t2w && t2w.geometry) {
+            const line2 = L.polyline(t2w.geometry, { color: "#34a853", weight: 5, opacity: 0.8 }).addTo(map);
+            routeLayers.push(line2);
+            allBounds.push(line2.getBounds());
+            const stopCoords = t2w.geometry[0];
+            const m2 = L.marker(stopCoords, { icon: stopIcon }).addTo(map)
+              .bindPopup(`🚏 ${t2w.stop_name} (${t2w.stop_type})`);
+            routeLayers.push(m2);
+          }
+
+          // Dashed line for transit portion (between the two stops)
+          if (h2t && h2t.geometry && t2w && t2w.geometry) {
+            const transitLine = L.polyline(
+              [h2t.geometry[h2t.geometry.length - 1], t2w.geometry[0]],
+              { color: "#999", weight: 3, dashArray: "10, 10", opacity: 0.6 }
+            ).addTo(map);
+            routeLayers.push(transitLine);
+          }
+
+          if (allBounds.length) {
+            const combined = allBounds.reduce((a, b) => a.extend(b));
+            map.fitBounds(combined, { padding: [60, 60] });
+          }
+
+          const totalCal = (data.total_walk_min * 4.0).toFixed(0);
+          document.getElementById("results").innerHTML = `
+            <div class="result-card">
+              <h3>🚆 Transit Commute — Walk Portions</h3>
+              <div class="metric">${data.total_walk_min} min walking</div>
+              <div class="sub">${data.total_walk_km} km · ~${totalCal} cal (one way)</div>
+            </div>
+            <div class="result-card">
+              <h3>Breakdown</h3>
+              <div class="transit-leg">
+                <span class="leg-icon">🟢</span>
+                <span>Home → <strong>${h2t.stop_name}</strong> (${h2t.stop_type.replace('_',' ')}):
+                  ${h2t.duration_min} min, ${h2t.distance_km} km</span>
+              </div>
+              <div class="transit-leg">
+                <span class="leg-icon">⬜</span>
+                <span style="color:#888">Transit ride (not counted as exercise)</span>
+              </div>
+              <div class="transit-leg">
+                <span class="leg-icon">🔴</span>
+                <span><strong>${t2w.stop_name}</strong> (${t2w.stop_type.replace('_',' ')}) → Work:
+                  ${t2w.duration_min} min, ${t2w.distance_km} km</span>
+              </div>
+            </div>
+            <div class="result-card">
+              <h3>📊 Daily Round Trip</h3>
+              <div class="metric">${(data.total_walk_min * 2).toFixed(1)} min</div>
+              <div class="sub">${(data.total_walk_km * 2).toFixed(2)} km · ~${(totalCal * 2)} cal</div>
+            </div>
+            <div class="result-card">
+              <h3>vs. Walking the Whole Way</h3>
+              <div class="sub">Direct walk would be ${data.direct_walk_min} min / ${data.direct_walk_km} km one way</div>
+            </div>
+          `;
+        }
+        setStatus("");
+      } catch (e) {
+        setStatus(`<span class="error">❌ ${e.message}</span>`);
+      }
+    }
+
+    // ── Amenity markers layer ───────────────────────────
+    let amenityMarkers = [];
+    const amenityIcons = {
+      gym: "🏋️", fitness: "🏋️", cafe: "☕", coffee: "☕", "coffee shop": "☕",
+      restaurant: "🍽️", grocery: "🛒", "grocery store": "🛒", supermarket: "🛒",
+      pharmacy: "💊", park: "🌳", library: "📚", bar: "🍺", bank: "🏦",
+      hospital: "🏥", school: "🏫", bakery: "🥖",
+    };
+
+    // ── Load amenity types into dropdown ────────────────
+    (async function loadAmenityTypes() {
+      try {
+        const r = await fetch(`${API}/amenities/types`);
+        if (!r.ok) return;
+        const data = await r.json();
+        const sel = document.getElementById("amenitySelect");
+        data.types.forEach((t) => {
+          const opt = document.createElement("option");
+          opt.value = t;
+          opt.textContent = `${amenityIcons[t] || "📍"} ${t.charAt(0).toUpperCase() + t.slice(1)}`;
+          sel.appendChild(opt);
+        });
+      } catch (_) {}
+    })();
+
+    // ── Search amenities ───────────────────────────────
+    async function searchAmenity() {
+      const sel = document.getElementById("amenitySelect");
+      const amenityType = sel.value;
+      if (!amenityType) { setStatus('<span class="error">Select an amenity type first</span>'); return; }
+      if (!startMarker) { setStatus('<span class="error">Place a start marker first (click the map)</span>'); return; }
+
+      const { lat, lng } = startMarker.getLatLng();
+      setStatus(`<span class="loading">⏳ Searching for ${amenityType} nearby…</span>`);
+
+      try {
+        const r = await fetch(`${API}/amenities/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location: { lat, lng }, amenity_type: amenityType, radius_m: 2000 }),
+        });
+        if (!r.ok) throw new Error((await r.json()).error);
+        const data = await r.json();
+
+        // Add chip
+        addAmenityChip(amenityType);
+
+        // Clear old markers for this type
+        clearAmenityMarkers(amenityType);
+
+        // Place markers on map
+        const icon = amenityIcons[amenityType] || "📍";
+        const results = data.results.slice(0, 10); // cap at 10
+        results.forEach((a) => {
+          const mIcon = L.divIcon({ html: icon, className: "marker-icon", iconSize: [30, 30], iconAnchor: [15, 15] });
+          const m = L.marker([a.lat, a.lng], { icon: mIcon }).addTo(map)
+            .bindPopup(`<strong>${a.name}</strong><br>${Math.round(a.distance_m)}m away`);
+          m._amenityType = amenityType;
+          amenityMarkers.push(m);
+        });
+
+        // Show results list
+        let html = `<div class="result-card">
+          <h3>${icon} ${amenityType.charAt(0).toUpperCase() + amenityType.slice(1)} (${results.length} found)</h3>
+          <ul class="amenity-list">`;
+        results.forEach((a) => {
+          const distStr = a.distance_m >= 1000
+            ? `${(a.distance_m / 1000).toFixed(1)} km`
+            : `${Math.round(a.distance_m)} m`;
+          const walkMin = Math.max(1, Math.round((a.distance_m / 1000) / 5 * 60));
+          html += `<li>
+            <span class="amenity-name">${a.name}</span>
+            <span class="amenity-dist">${distStr} &middot; ~${walkMin} min walk</span>
+          </li>`;
+        });
+        html += `</ul></div>`;
+        document.getElementById("amenityResults").innerHTML = html;
+
+        setStatus("");
+      } catch (e) {
+        setStatus(`<span class="error">❌ ${e.message}</span>`);
+      }
+    }
+
+    function addAmenityChip(type) {
+      const container = document.getElementById("amenityChips");
+      // Don't double-add
+      if (container.querySelector(`[data-type="${type}"]`)) return;
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.dataset.type = type;
+      chip.innerHTML = `${amenityIcons[type] || "📍"} ${type} <span class="remove" onclick="removeAmenity('${type}')">&times;</span>`;
+      container.appendChild(chip);
+    }
+
+    function removeAmenity(type) {
+      // Remove chip
+      const chip = document.querySelector(`#amenityChips [data-type="${type}"]`);
+      if (chip) chip.remove();
+      // Remove map markers
+      clearAmenityMarkers(type);
+      // Clear results if no chips left
+      if (!document.getElementById("amenityChips").children.length) {
+        document.getElementById("amenityResults").innerHTML = "";
+      }
+    }
+
+    function clearAmenityMarkers(type) {
+      amenityMarkers = amenityMarkers.filter((m) => {
+        if (m._amenityType === type) { map.removeLayer(m); return false; }
+        return true;
+      });
+    }
+
+    function clearAllAmenities() {
+      amenityMarkers.forEach((m) => map.removeLayer(m));
+      amenityMarkers = [];
+      document.getElementById("amenityChips").innerHTML = "";
+      document.getElementById("amenityResults").innerHTML = "";
+    }
+
+    // ── Update clearAll to also clear amenities ────────
+    const _origClearAll = clearAll;
+    clearAll = function() {
+      _origClearAll();
+      clearAllAmenities();
+    };
+
+    // ── Enter key submits ──────────────────────────────
+    document.querySelectorAll("input").forEach((el) => {
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") getWalkRoute();
+      });
+    });
+  </script>
+</body>
+</html>
