@@ -134,6 +134,12 @@
       <div class="divider"></div>
 
       <div id="results"></div>
+
+      <!-- Debug panel -->
+      <details id="debugPanel" style="display:none; margin-top:8px;">
+        <summary style="cursor:pointer; font-size:12px; color:#888; user-select:none;">🔍 Debug: Raw API Response</summary>
+        <pre id="debugContent" style="font-size:11px; background:#1e1e1e; color:#d4d4d4; padding:10px; border-radius:6px; max-height:300px; overflow:auto; white-space:pre-wrap; word-break:break-all; margin-top:4px;"></pre>
+      </details>
     </div>
 
     <!-- Map -->
@@ -324,9 +330,48 @@
         if (!r.ok) throw new Error((await r.json()).error);
         const data = await r.json();
 
+        // ── Debug output ──────────────────────────────────
+        console.group("🚆 Transit Commute Response");
+        console.log("Full response:", data);
+        console.log("Source:", data.source);
+        console.log("Mode:", data.mode);
+        console.log("Total walk:", data.total_walk_min, "min /", data.total_walk_km, "km");
+        if (data.home_to_transit) {
+          console.log("Home → Transit:", data.home_to_transit.stop_name,
+            `(${data.home_to_transit.stop_type})`,
+            data.home_to_transit.duration_min, "min");
+        }
+        if (data.transit_to_work) {
+          console.log("Transit → Work:", data.transit_to_work.stop_name,
+            `(${data.transit_to_work.stop_type})`,
+            data.transit_to_work.duration_min, "min");
+        }
+        if (data.transit_legs) {
+          console.log("Transit legs:");
+          data.transit_legs.forEach((tl, i) => {
+            const info = tl.transit_info || {};
+            console.log(`  Leg ${i+1}: ${info.type} ${info.line_short_name || info.line_name || "?"} ` +
+              `${info.departure_stop} → ${info.arrival_stop} (${info.num_stops} stops, ${tl.duration_min} min)`);
+          });
+        }
+        if (data.walk_legs) {
+          console.log("Walk legs:");
+          data.walk_legs.forEach((wl, i) => {
+            console.log(`  Walk ${i+1}: ${wl.distance_km} km, ${wl.duration_min} min`);
+          });
+        }
+        console.groupEnd();
+
+        // Show debug panel
+        const debugPanel = document.getElementById("debugPanel");
+        const debugContent = document.getElementById("debugContent");
+        debugPanel.style.display = "block";
+        debugContent.textContent = JSON.stringify(data, null, 2);
+        // ──────────────────────────────────────────────────
+
         clearRoutes();
 
-        if (data.mode === "direct_walk") {
+        if (data.mode === "direct_walk" || data.mode === "walk_only") {
           // Direct walk is shorter — show that
           const calories = (data.total_walk_min * 4.0).toFixed(0);
           document.getElementById("results").innerHTML = `
@@ -353,21 +398,43 @@
             }
           }
         } else {
-          // Transit mode — draw both walk legs
+          // Transit mode — draw walk legs and transit segments
           const h2t = data.home_to_transit;
           const t2w = data.transit_to_work;
           const allBounds = [];
+          const isGoogle = data.source === "google_routes_api";
 
           // Leg 1: home → transit stop (blue)
           if (h2t && h2t.geometry) {
             const line1 = L.polyline(h2t.geometry, { color: "#1a73e8", weight: 5, opacity: 0.8 }).addTo(map);
             routeLayers.push(line1);
             allBounds.push(line1.getBounds());
-            // Transit stop marker
             const stopCoords = h2t.geometry[h2t.geometry.length - 1];
             const m1 = L.marker(stopCoords, { icon: stopIcon }).addTo(map)
               .bindPopup(`🚏 ${h2t.stop_name} (${h2t.stop_type})`);
             routeLayers.push(m1);
+          }
+
+          // Google: draw transit segments in distinct colors
+          if (isGoogle && data.transit_legs) {
+            const transitColors = ["#e67c00", "#9c27b0", "#00838f", "#c62828"];
+            data.transit_legs.forEach((tl, i) => {
+              if (tl.geometry) {
+                const color = transitColors[i % transitColors.length];
+                const line = L.polyline(tl.geometry, { color, weight: 5, opacity: 0.7 }).addTo(map);
+                routeLayers.push(line);
+                allBounds.push(line.getBounds());
+              }
+            });
+          }
+
+          // Fallback: dashed line for transit portion (Overpass heuristic)
+          if (!isGoogle && h2t && h2t.geometry && t2w && t2w.geometry) {
+            const transitLine = L.polyline(
+              [h2t.geometry[h2t.geometry.length - 1], t2w.geometry[0]],
+              { color: "#999", weight: 3, dashArray: "10, 10", opacity: 0.6 }
+            ).addTo(map);
+            routeLayers.push(transitLine);
           }
 
           // Leg 2: transit stop → work (green)
@@ -381,53 +448,76 @@
             routeLayers.push(m2);
           }
 
-          // Dashed line for transit portion (between the two stops)
-          if (h2t && h2t.geometry && t2w && t2w.geometry) {
-            const transitLine = L.polyline(
-              [h2t.geometry[h2t.geometry.length - 1], t2w.geometry[0]],
-              { color: "#999", weight: 3, dashArray: "10, 10", opacity: 0.6 }
-            ).addTo(map);
-            routeLayers.push(transitLine);
-          }
-
           if (allBounds.length) {
             const combined = allBounds.reduce((a, b) => a.extend(b));
             map.fitBounds(combined, { padding: [60, 60] });
           }
 
           const totalCal = (data.total_walk_min * 4.0).toFixed(0);
+
+          // Build transit details section
+          let transitDetailsHtml = "";
+          if (isGoogle && data.transit_legs && data.transit_legs.length) {
+            transitDetailsHtml = `<div class="result-card">
+              <h3>🚍 Transit Details</h3>`;
+            data.transit_legs.forEach((tl) => {
+              const info = tl.transit_info || {};
+              const lineLabel = info.line_short_name || info.line_name || "Transit";
+              const typeEmoji = { bus: "🚌", rail: "🚆", subway: "🚇", tram: "🚊", ferry: "⛴️" }[info.type] || "🚍";
+              transitDetailsHtml += `
+              <div class="transit-leg">
+                <span class="leg-icon">${typeEmoji}</span>
+                <span><strong>${lineLabel}</strong>${info.headsign ? " → " + info.headsign : ""}<br>
+                  <small style="color:#666">${info.departure_stop} → ${info.arrival_stop}${info.num_stops ? " · " + info.num_stops + " stops" : ""}${info.agency ? " · " + info.agency : ""}</small>
+                </span>
+              </div>`;
+            });
+            transitDetailsHtml += `</div>`;
+          }
+
+          const sourceLabel = isGoogle
+            ? '<span style="color:#34a853;font-size:11px">✓ Google Routes API (real schedule)</span>'
+            : '<span style="color:#999;font-size:11px">Overpass heuristic (nearest-stop estimate)</span>';
+
+          const h2tName = h2t ? h2t.stop_name : "Transit";
+          const h2tType = h2t ? h2t.stop_type.replace("_", " ") : "";
+          const h2tMin  = h2t ? h2t.duration_min : "?";
+          const h2tKm   = h2t ? h2t.distance_km : "?";
+          const t2wName = t2w ? t2w.stop_name : "Transit";
+          const t2wType = t2w ? t2w.stop_type.replace("_", " ") : "";
+          const t2wMin  = t2w ? t2w.duration_min : "?";
+          const t2wKm   = t2w ? t2w.distance_km : "?";
+
           document.getElementById("results").innerHTML = `
             <div class="result-card">
               <h3>🚆 Transit Commute — Walk Portions</h3>
               <div class="metric">${data.total_walk_min} min walking</div>
               <div class="sub">${data.total_walk_km} km · ~${totalCal} cal (one way)</div>
+              <div style="margin-top:6px">${sourceLabel}</div>
             </div>
             <div class="result-card">
-              <h3>Breakdown</h3>
+              <h3>🚶 Walk Legs</h3>
               <div class="transit-leg">
                 <span class="leg-icon">🟢</span>
-                <span>Home → <strong>${h2t.stop_name}</strong> (${h2t.stop_type.replace('_',' ')}):
-                  ${h2t.duration_min} min, ${h2t.distance_km} km</span>
-              </div>
-              <div class="transit-leg">
-                <span class="leg-icon">⬜</span>
-                <span style="color:#888">Transit ride (not counted as exercise)</span>
+                <span>Home → <strong>${h2tName}</strong>${h2tType ? " (" + h2tType + ")" : ""}:
+                  ${h2tMin} min, ${h2tKm} km</span>
               </div>
               <div class="transit-leg">
                 <span class="leg-icon">🔴</span>
-                <span><strong>${t2w.stop_name}</strong> (${t2w.stop_type.replace('_',' ')}) → Work:
-                  ${t2w.duration_min} min, ${t2w.distance_km} km</span>
+                <span><strong>${t2wName}</strong>${t2wType ? " (" + t2wType + ")" : ""} → Work:
+                  ${t2wMin} min, ${t2wKm} km</span>
               </div>
             </div>
+            ${transitDetailsHtml}
             <div class="result-card">
               <h3>📊 Daily Round Trip</h3>
               <div class="metric">${(data.total_walk_min * 2).toFixed(1)} min</div>
               <div class="sub">${(data.total_walk_km * 2).toFixed(2)} km · ~${(totalCal * 2)} cal</div>
             </div>
-            <div class="result-card">
+            ${data.direct_walk_min ? `<div class="result-card">
               <h3>vs. Walking the Whole Way</h3>
               <div class="sub">Direct walk would be ${data.direct_walk_min} min / ${data.direct_walk_km} km one way</div>
-            </div>
+            </div>` : ""}
           `;
         }
         setStatus("");

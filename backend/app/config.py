@@ -22,6 +22,7 @@ class Config:
         "OVERPASS_BASE_URL", "https://overpass-api.de/api/interpreter"
     )
     ORS_API_KEY = os.getenv("ORS_API_KEY", "")
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
     # --- Score calculation defaults ---
     # Average walking speed in km/h (brisk walk)

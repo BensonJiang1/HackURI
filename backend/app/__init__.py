@@ -1,5 +1,6 @@
 """Flask application factory."""
 
+import logging
 from flask import Flask
 from flask_cors import CORS
 
@@ -7,6 +8,10 @@ from flask_cors import CORS
 def create_app():
     app = Flask(__name__)
     app.config.from_object("app.config.Config")
+
+    # Ensure debug-level logs show in console during development
+    if app.debug or app.config.get("FLASK_DEBUG"):
+        app.logger.setLevel(logging.DEBUG)
 
     # Allow cross-origin requests in development (frontend demo, Next.js, etc.)
     CORS(app)

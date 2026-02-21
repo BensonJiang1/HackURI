@@ -66,12 +66,15 @@ def calculate_score(
 
                 label = "Work commute"
                 if commute["mode"] == "transit":
-                    h2t = commute["home_to_transit"]
-                    t2w = commute["transit_to_work"]
-                    label = (
-                        f"Walk to {h2t['stop_name']} "
-                        f"+ walk from {t2w['stop_name']} to work"
-                    )
+                    h2t = commute.get("home_to_transit")
+                    t2w = commute.get("transit_to_work")
+                    if h2t and t2w:
+                        label = (
+                            f"Walk to {h2t['stop_name']} "
+                            f"+ walk from {t2w['stop_name']} to work"
+                        )
+                    elif h2t:
+                        label = f"Walk to {h2t['stop_name']} + transit to work"
 
                 breakdown.append({
                     "label": label,
@@ -81,6 +84,7 @@ def calculate_score(
                     "weekly_minutes": round(weekly_min, 1),
                     "commute_mode": commute["mode"],
                     "commute_detail": commute,
+                    "source": commute.get("source", "unknown"),
                 })
         else:
             # Legacy: walk the entire distance

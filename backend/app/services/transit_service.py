@@ -1,4 +1,8 @@
-"""Transit service — finds nearby transit stops and computes walk-to-transit commutes."""
+"""Transit service — finds nearby transit stops and computes walk-to-transit commutes.
+
+Uses Google Routes API when GOOGLE_MAPS_API_KEY is set (accurate real-world
+transit routing). Falls back to the Overpass heuristic otherwise.
+"""
 
 import time
 import math
@@ -101,9 +105,9 @@ def get_commute_walk_legs(
     """
     Compute the walking portions of a transit commute.
 
-    Finds nearest transit stop to home and to work, then returns the walking
-    route for each leg. If walking the full distance is shorter than walking
-    to transit + from transit, returns the direct walk instead.
+    If GOOGLE_MAPS_API_KEY is configured, uses the Google Routes API for
+    real transit routing (correct lines, schedules, transfers).
+    Otherwise falls back to the Overpass heuristic (nearest stops).
 
     Returns dict with:
         mode: "direct_walk" | "transit"
@@ -111,6 +115,37 @@ def get_commute_walk_legs(
         transit_to_work: {stop_name, stop_type, distance_km, duration_min, geometry} | None
         total_walk_min: float   (one-way total for the walking portions)
         total_walk_km: float
+        source: "google_routes_api" | "overpass_heuristic"
+    """
+    # ── Try Google Routes API first ──────────────────────────────────
+    google_key = current_app.config.get("GOOGLE_MAPS_API_KEY", "")
+    if google_key:
+        try:
+            from app.services.google_transit_service import get_transit_route
+            result = get_transit_route(home_lat, home_lng, work_lat, work_lng)
+            if result is not None:
+                return result
+        except Exception as exc:
+            current_app.logger.warning(
+                "Google Routes API failed, falling back to Overpass: %s", exc
+            )
+
+    # ── Fallback: Overpass heuristic ─────────────────────────────────
+    return _overpass_commute_walk_legs(
+        home_lat, home_lng, work_lat, work_lng, transit_radius_m
+    )
+
+
+def _overpass_commute_walk_legs(
+    home_lat: float,
+    home_lng: float,
+    work_lat: float,
+    work_lng: float,
+    transit_radius_m: int = 2000,
+) -> dict | None:
+    """
+    Original Overpass-based heuristic: find nearest transit stop to home
+    and to work, compute walk legs. Does NOT verify the stops share a route.
     """
     from app.services.routing_service import get_walking_route
 
@@ -133,6 +168,7 @@ def get_commute_walk_legs(
             "total_walk_km": direct["distance_km"],
             "direct_walk_min": direct["duration_min"],
             "direct_walk_km": direct["distance_km"],
+            "source": "overpass_heuristic",
         }
 
     # 3. Walk from home to nearest transit stop
@@ -152,6 +188,7 @@ def get_commute_walk_legs(
             "total_walk_km": direct["distance_km"],
             "direct_walk_min": direct["duration_min"],
             "direct_walk_km": direct["distance_km"],
+            "source": "overpass_heuristic",
         }
 
     transit_walk_min = leg1["duration_min"] + leg2["duration_min"]
@@ -167,6 +204,7 @@ def get_commute_walk_legs(
             "total_walk_km": direct["distance_km"],
             "direct_walk_min": direct["duration_min"],
             "direct_walk_km": direct["distance_km"],
+            "source": "overpass_heuristic",
         }
 
     return {
@@ -189,4 +227,5 @@ def get_commute_walk_legs(
         "total_walk_km": round(transit_walk_km, 2),
         "direct_walk_min": direct["duration_min"],
         "direct_walk_km": direct["distance_km"],
+        "source": "overpass_heuristic",
     }
