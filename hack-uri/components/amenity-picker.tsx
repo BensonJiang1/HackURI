@@ -6,6 +6,7 @@ import {
   Trees,
   Dumbbell,
   GraduationCap,
+  ShoppingCart,
   ShoppingBag,
   Utensils,
   Bus,
@@ -18,8 +19,15 @@ import {
   BookOpen,
   Landmark,
   Dog,
+  Wine,
+  Pill,
+  Banknote,
+  CakeSlice,
   X,
+  Loader2,
 } from "lucide-react"
+import { useApp } from "@/lib/app-context"
+import { searchAmenities } from "@/lib/api"
 
 interface Amenity {
   id: string
@@ -29,31 +37,46 @@ interface Amenity {
 }
 
 const amenities: Amenity[] = [
-  { id: "parks", label: "Parks", icon: Trees, category: "Outdoors" },
-  { id: "trails", label: "Trails", icon: Bike, category: "Outdoors" },
-  { id: "beaches", label: "Beaches", icon: Waves, category: "Outdoors" },
-  { id: "dog-parks", label: "Dog Parks", icon: Dog, category: "Outdoors" },
-  { id: "gyms", label: "Gyms", icon: Dumbbell, category: "Fitness" },
+  // Outdoors
+  { id: "park", label: "Parks", icon: Trees, category: "Outdoors" },
+  { id: "path", label: "Trails", icon: Bike, category: "Outdoors" },
+  { id: "beach", label: "Beaches", icon: Waves, category: "Outdoors" },
+  { id: "dog_park", label: "Dog Parks", icon: Dog, category: "Outdoors" },
+  // Fitness
+  { id: "gym", label: "Gyms", icon: Dumbbell, category: "Fitness" },
   { id: "yoga", label: "Yoga Studios", icon: Heart, category: "Fitness" },
-  { id: "pools", label: "Swimming Pools", icon: Waves, category: "Fitness" },
-  { id: "schools", label: "Schools", icon: GraduationCap, category: "Education" },
-  { id: "libraries", label: "Libraries", icon: BookOpen, category: "Education" },
-  { id: "daycare", label: "Daycare", icon: Baby, category: "Education" },
-  { id: "restaurants", label: "Restaurants", icon: Utensils, category: "Dining" },
-  { id: "cafes", label: "Cafes", icon: Coffee, category: "Dining" },
-  { id: "shopping", label: "Shopping", icon: ShoppingBag, category: "Retail" },
-  { id: "malls", label: "Malls", icon: Building2, category: "Retail" },
-  { id: "transit", label: "Public Transit", icon: Bus, category: "Transport" },
-  { id: "hospitals", label: "Hospitals", icon: Heart, category: "Healthcare" },
-  { id: "museums", label: "Museums", icon: Landmark, category: "Culture" },
+  { id: "swimming_pool", label: "Swimming Pools", icon: Waves, category: "Fitness" },
+  // Food & Drink
+  { id: "restaurant", label: "Restaurants", icon: Utensils, category: "Food & Drink" },
+  { id: "cafe", label: "Cafes", icon: Coffee, category: "Food & Drink" },
+  { id: "coffee", label: "Coffee Shops", icon: Coffee, category: "Food & Drink" },
+  { id: "bar", label: "Bars", icon: Wine, category: "Food & Drink" },
+  { id: "bakery", label: "Bakeries", icon: CakeSlice, category: "Food & Drink" },
+  // Shopping
+  { id: "grocery", label: "Grocery Stores", icon: ShoppingCart, category: "Shopping" },
+  { id: "supermarket", label: "Supermarkets", icon: ShoppingBag, category: "Shopping" },
+  { id: "pharmacy", label: "Pharmacies", icon: Pill, category: "Shopping" },
+  { id: "mall", label: "Malls", icon: Building2, category: "Shopping" },
+  // Education
+  { id: "school", label: "Schools", icon: GraduationCap, category: "Education" },
+  { id: "library", label: "Libraries", icon: BookOpen, category: "Education" },
+  { id: "kindergarten", label: "Daycare", icon: Baby, category: "Education" },
+  // Services
+  { id: "hospital", label: "Hospitals", icon: Heart, category: "Services" },
+  { id: "bank", label: "Banks", icon: Banknote, category: "Services" },
+  { id: "bus_station", label: "Public Transit", icon: Bus, category: "Services" },
+  { id: "museum", label: "Museums", icon: Landmark, category: "Services" },
 ]
 
 const categories = Array.from(new Set(amenities.map((a) => a.category)))
 
-export function AmenityPicker() {
-  const [selected, setSelected] = useState<string[]>([])
+export function AmenityPicker({ onApply }: { onApply?: () => void }) {
+  const { home, selectedAmenityIds, setAmenityResults, setSelectedAmenityIds, setLoading } = useApp()
+  const [selected, setSelected] = useState<string[]>(selectedAmenityIds)
   const [query, setQuery] = useState("")
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     return amenities.filter((a) => {
@@ -199,16 +222,47 @@ export function AmenityPicker() {
         )}
       </div>
 
-      {/* Count badge */}
+      {/* Count badge + Apply */}
       {selected.length > 0 && (
-        <div className="flex items-center justify-between rounded-xl border border-[#ffb614]/20 bg-[#ffb614]/5 px-4 py-2.5">
-          <span className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">{selected.length}</span>{" "}
-            {selected.length === 1 ? "amenity" : "amenities"} selected
-          </span>
-          <button className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90">
-            Apply
-          </button>
+        <div className="flex flex-col gap-2">
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex items-center justify-between rounded-xl border border-[#ffb614]/20 bg-[#ffb614]/5 px-4 py-2.5">
+            <span className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{selected.length}</span>{" "}
+              {selected.length === 1 ? "amenity" : "amenities"} selected
+            </span>
+            <button
+              disabled={searching || !home}
+              onClick={async () => {
+                if (!home) {
+                  setError("Set a home address first")
+                  return
+                }
+                setError(null)
+                setSearching(true)
+                setLoading("amenities", true)
+                try {
+                  // Search sequentially to avoid Overpass 429 rate limits
+                  const allResults = []
+                  for (const id of selected) {
+                    const results = await searchAmenities({ lat: home.lat, lng: home.lng }, id)
+                    allResults.push(...results)
+                  }
+                  setAmenityResults(allResults)
+                  setSelectedAmenityIds(selected)
+                  onApply?.()
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Search failed")
+                } finally {
+                  setSearching(false)
+                  setLoading("amenities", false)
+                }
+              }}
+              className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-40"
+            >
+              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -19,7 +19,7 @@ export function NavigationMain({ activeTab, onTabChange }: NavigationProps) {
   ]
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50">
+    <header className="relative z-50">
       <div className="mx-4 mt-4 md:mx-6 md:mt-6">
         <nav className="flex items-center justify-between rounded-2xl border border-[#ffb614] bg-[#FDFCF0] px-5 py-3 backdrop-blur-xl">
           {/* Logo */}
