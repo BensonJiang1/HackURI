@@ -191,6 +191,24 @@ def get_transit_route(
                 stop_name=_get_stop_name(transit_legs, -1, "end"),
                 stop_type=_get_transit_type(transit_legs, -1),
             )
+
+        # Walk legs BETWEEN transit legs (transfers)
+        transfer_walks = []
+        transit_indices = [
+            i for i, s in enumerate(all_steps) if s.get("travelMode") == "TRANSIT"
+        ]
+        for ti in range(len(transit_indices) - 1):
+            start_idx = transit_indices[ti] + 1
+            end_idx = transit_indices[ti + 1]
+            mid_walks = [s for s in all_steps[start_idx:end_idx] if s["travelMode"] == "WALK"]
+            if mid_walks:
+                from_stop = _get_stop_name(transit_legs, ti, "end")
+                to_stop = _get_stop_name(transit_legs, ti + 1, "start")
+                transfer_walks.append(_merge_walk_legs(
+                    mid_walks,
+                    stop_name=f"{from_stop} → {to_stop}",
+                    stop_type="transfer",
+                ))
     elif walk_legs:
         # All-walk route (no transit legs)
         home_to_transit = _merge_walk_legs(
@@ -206,6 +224,7 @@ def get_transit_route(
         "mode": "transit" if transit_legs else "direct_walk",
         "home_to_transit": home_to_transit if transit_legs else None,
         "transit_to_work": transit_to_work if transit_legs else None,
+        "transfer_walks": transfer_walks if transit_legs else [],
         "total_walk_min": round(total_walk_s / 60, 1),
         "total_walk_km": round(total_walk_m / 1000, 2),
         "total_duration_min": round(total_dur_s / 60, 1),

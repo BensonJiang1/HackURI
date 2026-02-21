@@ -428,6 +428,19 @@
             });
           }
 
+          // Google: draw transfer walks (between transit legs) as dashed blue
+          if (isGoogle && data.transfer_walks) {
+            data.transfer_walks.forEach((tw) => {
+              if (tw.geometry && tw.geometry.length > 1) {
+                const line = L.polyline(tw.geometry, {
+                  color: "#1a73e8", weight: 4, opacity: 0.7, dashArray: "8, 6"
+                }).addTo(map);
+                routeLayers.push(line);
+                allBounds.push(line.getBounds());
+              }
+            });
+          }
+
           // Fallback: dashed line for transit portion (Overpass heuristic)
           if (!isGoogle && h2t && h2t.geometry && t2w && t2w.geometry) {
             const transitLine = L.polyline(
@@ -509,6 +522,14 @@
               </div>
             </div>
             ${transitDetailsHtml}
+            ${data.transfer_walks && data.transfer_walks.length ? `<div class="result-card">
+              <h3>🚶 Transfer Walks</h3>
+              ${data.transfer_walks.map(tw => `
+              <div class="transit-leg">
+                <span class="leg-icon">🔄</span>
+                <span>${tw.stop_name}: ${tw.duration_min} min, ${tw.distance_km} km</span>
+              </div>`).join("")}
+            </div>` : ""}
             <div class="result-card">
               <h3>📊 Daily Round Trip</h3>
               <div class="metric">${(data.total_walk_min * 2).toFixed(1)} min</div>
