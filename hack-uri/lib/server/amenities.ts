@@ -6,7 +6,7 @@ import { config } from "./config"
 
 /* ---- Overpass throttle ---- */
 let lastOverpassTime = 0
-const OVERPASS_MIN_INTERVAL = 2000 // ms
+const OVERPASS_MIN_INTERVAL = 3000 // ms — Overpass public API needs generous spacing
 
 async function throttleOverpass() {
   const elapsed = Date.now() - lastOverpassTime
@@ -15,6 +15,13 @@ async function throttleOverpass() {
   }
   lastOverpassTime = Date.now()
 }
+
+/* ---- Overpass mirrors (fallback on repeated failures) ---- */
+const OVERPASS_MIRRORS = [
+  config.OVERPASS_BASE_URL,
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
 
 /* ---- Amenity tag map ---- */
 type TagGroups = string[][]
@@ -98,18 +105,24 @@ export async function searchAmenities(
     out center body;
   `
 
-  // Throttle + retry with back-off on 429/504
+  // Throttle + retry with back-off on 429/504, rotating through mirrors
   let resp: Response | null = null
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     await throttleOverpass()
-    resp = await fetch(config.OVERPASS_BASE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    })
-    if (resp.status === 429 || resp.status === 504) {
+    const url = OVERPASS_MIRRORS[attempt % OVERPASS_MIRRORS.length]
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+      })
+    } catch {
+      console.warn(`[overpass] Network error on attempt ${attempt + 1} for "${amenityType}" via ${url}`)
+      resp = null
+    }
+    if (!resp || resp.status === 429 || resp.status === 504) {
       const wait = OVERPASS_MIN_INTERVAL * (attempt + 2)
-      console.warn(`[overpass] ${resp.status} on attempt ${attempt + 1} for "${amenityType}" — retrying in ${wait}ms`)
+      console.warn(`[overpass] ${resp?.status ?? "ERR"} on attempt ${attempt + 1} for "${amenityType}" — trying next mirror in ${wait}ms`)
       await new Promise<void>((r) => setTimeout(r, wait))
       continue
     }
