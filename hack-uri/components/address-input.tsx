@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { MapPin, Home, Briefcase, ShoppingCart, Search } from "lucide-react"
+// Added Sparkles for the Amenities icon
+import { MapPin, Home, Briefcase, ShoppingCart, Search, Sparkles } from "lucide-react"
 
 const addressTypes = [
   { id: "home", label: "Home", icon: Home },
   { id: "work", label: "Work", icon: Briefcase },
+  { id: "amenities", label: "Amenities", icon: Sparkles }, // Added new 3rd option
   { id: "groceries", label: "Groceries", icon: ShoppingCart },
 ] as const
 
@@ -20,8 +22,9 @@ export function AddressInput() {
       {/* Header */}
       <div>
         <div className="mb-1 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary">
-            <MapPin className="h-4 w-4 text-primary-foreground" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10"> 
+            {/* Note: I added /10 to the bg-primary for a softer look similar to your screenshot */}
+            <MapPin className="h-4 w-4 text-primary" />
           </div>
           <h2 className="text-lg font-bold text-card-foreground">Input Address</h2>
         </div>
@@ -42,7 +45,7 @@ export function AddressInput() {
         </div>
       </div>
 
-      {/* Address type buttons */}
+      {/* Address type buttons - will now automatically render 4 buttons */}
       <div className="flex gap-2">
         {addressTypes.map(({ id, label, icon: Icon }) => (
           <button
@@ -50,12 +53,13 @@ export function AddressInput() {
             onClick={() => setActiveType(id)}
             className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all ${
               activeType === id
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-secondary text-muted-foreground hover:border-ring/30 hover:text-card-foreground"
+                ? "border-primary bg-white text-black" // Matches your "active" screenshot style
+                : "border-border bg-secondary/50 text-muted-foreground hover:border-ring/30 hover:text-card-foreground"
             }`}
           >
             <Icon className="h-4 w-4" />
-            <span>{label}</span>
+            <span className="hidden sm:inline">{label}</span> 
+            {/* Hidden sm:inline helps buttons not overlap on smaller screens */}
           </button>
         ))}
       </div>

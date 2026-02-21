@@ -10,21 +10,21 @@ export function Navigation() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
       <div className="mx-4 mt-4 md:mx-6 md:mt-6">
-        <nav className="flex items-center justify-between rounded-2xl border border-[#ffb614]/15 bg-[#0f0e0b]/90 px-5 py-3 backdrop-blur-xl">
+        <nav className="flex items-center justify-between rounded-2xl border border-[#ffb614]/15 bg-[#FDFCF0] px-5 py-3 backdrop-blur-xl">
           {/* Logo */}
-          <Link href="#" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-accent-foreground">
                 <path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 5h8v3h-8v-3z" fill="currentColor" />
               </svg>
             </div>
-            <span className="text-lg font-semibold tracking-tight text-foreground">Amenity Aware</span>
+            <span className="text-lg font-semibold tracking-tight text-black">Amenity Aware</span>
           </Link>
 
           {/* Desktop CTA */}
           <div className="hidden items-center gap-3 md:flex">
             <Link
-              href="#contact"
+              href="/main-page"
               className="group flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:brightness-110"
             >
               Go To Predictior

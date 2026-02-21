@@ -10,15 +10,12 @@ import { Footer } from "@/components/footer"
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen">
       <Navigation />
       <Hero />
-      <Services />
-      <Features />
-      <Technology />
-      <HowWeWork />
-      <Newsroom />
-      <CTA />
+      
+      {/* <Features /> */}
+      
       <Footer />
     </main>
   )
