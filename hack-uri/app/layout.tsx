@@ -9,8 +9,8 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
-  title: 'Fleet - Logistics & Supply Chain Solutions',
-  description: 'Delivering excellence across global supply chains.',
+  title: 'Amenity Aware',
+  description: 'Discover local amenities with ease',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
