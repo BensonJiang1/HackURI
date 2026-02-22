@@ -65,6 +65,18 @@ export async function getCommute(
   return post<CommuteResult>("/route/commute", { origin, destination })
 }
 
+
+export async function getEnvironmentalContext(lat: number, lng: number): Promise<{
+  regionName: string;
+  scores: {
+    tree: { value: number; justification: string };
+    road: { value: number; justification: string };
+    lifestyle: { value: number; justification: string };
+  }
+}> {
+  return post("/environmental/analyze", { lat, lng });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Amenities                                                          */
 /* ------------------------------------------------------------------ */
